@@ -41,7 +41,7 @@ struct Live2DRenderTarget {
 };
 extern Live2DRenderTarget g_live2dRenderTarget;
 
-#if defined(KRKR_HAS_CUBISM) && !KRKR_HAS_CUBISM
+#if (defined(ENGINE_API_BUILD_SHARED) || defined(ENGINE_API_EXPORT_SYMBOLS)) && defined(KRKR_HAS_CUBISM) && !KRKR_HAS_CUBISM
 // Keep GLES available when the proprietary Cubism SDK is absent.
 Live2DRenderTarget g_live2dRenderTarget{};
 extern "C" void TVPRegisterKrkrLive2DPluginAnchor() {}
