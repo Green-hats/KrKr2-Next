@@ -25,6 +25,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install native build tools
+        run: brew install autoconf automake autoconf-archive
+
       - name: Set up vcpkg at the repository baseline
         shell: bash
         run: |
