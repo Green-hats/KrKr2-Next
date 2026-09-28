@@ -651,7 +651,9 @@ namespace TJS {
         tjs_int num_alloc =
             MaxVariableCount + VariableReserveCount + 1 + MaxFrameCount;
         TJSVariantArrayStackAddRef();
-        //	AddRef();
+        // Script execution can evict its own cached block or trigger orphan
+        // collection. Keep this context alive until its register frame is gone.
+        AddRef();
         //	if(objthis) objthis->AddRef();
         try {
             tTJSVariant *regs = TJSVariantArrayStack->Allocate(num_alloc);
@@ -778,13 +780,13 @@ namespace TJS {
                 TJSStackTracerPop();
         } catch(...) {
             //		if(objthis) objthis->Release();
-            //		Release();
             TJSVariantArrayStackRelease();
+            Release();
             throw;
         }
         //	if(objthis) objthis->Release();
-        //	Release();
         TJSVariantArrayStackRelease();
+        Release();
     }
 
     //---------------------------------------------------------------------------
