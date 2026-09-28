@@ -72,6 +72,7 @@ file(GLOB_RECURSE CUBISM_FW_SOURCES
 list(FILTER CUBISM_FW_SOURCES EXCLUDE REGEX ".*/D3D9/.*|.*/D3D11/.*|.*/Vulkan/.*|.*/Metal/.*|.*/Cocos2d/.*")
 
 if(CUBISM_FW_SOURCES)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KRKR_HAS_CUBISM=1)
     target_sources(${PROJECT_NAME} PRIVATE krkrlive2d.cpp)
 
 add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})
@@ -124,6 +125,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_compile_definitions(${PROJECT_NAME} PUBLIC CSM_TARGET_ANGLE_ES2)
 target_link_libraries(${PROJECT_NAME} PUBLIC CubismFramework)
 else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KRKR_HAS_CUBISM=0)
     message(STATUS "Live2D Cubism Framework is unavailable; krkrlive2d plugin is disabled")
 endif()
 
