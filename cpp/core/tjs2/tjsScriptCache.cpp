@@ -75,7 +75,10 @@ namespace TJS {
         tScriptBlockHolder *holder = Cache.FindAndTouchWithHash(data, hash);
         if(holder) {
             sExecCacheHit.fetch_add(1, std::memory_order_relaxed);
-            holder->GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
+            // Nested script execution may evict this cache entry. Retain the
+            // block until its active call has returned.
+            tScriptBlockHolder active(*holder);
+            active.GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
             return;
         }
 
@@ -121,7 +124,8 @@ namespace TJS {
         tScriptBlockHolder *holder = Cache.FindAndTouchWithHash(data, hash);
         if(holder) {
             sExecCacheHit.fetch_add(1, std::memory_order_relaxed);
-            holder->GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
+            tScriptBlockHolder active(*holder);
+            active.GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
             return;
         }
 
@@ -175,7 +179,8 @@ namespace TJS {
 
         if(holder) {
             sEvalCacheHit.fetch_add(1, std::memory_order_relaxed);
-            holder->GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
+            tScriptBlockHolder active(*holder);
+            active.GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
             return;
         }
 
@@ -233,7 +238,8 @@ namespace TJS {
 
         if(holder) {
             sEvalCacheHit.fetch_add(1, std::memory_order_relaxed);
-            holder->GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
+            tScriptBlockHolder active(*holder);
+            active.GetObjectNoAddRef()->ExecuteTopLevelScript(result, context);
             return;
         }
 
