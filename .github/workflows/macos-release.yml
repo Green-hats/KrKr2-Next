@@ -70,6 +70,12 @@ jobs:
           app="apps/flutter_app/build/macos/Build/Products/Release/KrKr2 Next.app"
           test -d "$app"
           test -f "$app/Contents/Frameworks/libengine_api.dylib"
+          python3 - "$app/Contents/Frameworks/libengine_api.dylib" <<'PY'
+          import ctypes
+          import sys
+          ctypes.CDLL(sys.argv[1])
+          print("engine_api dlopen OK")
+          PY
           codesign --verify --deep --strict --verbose=2 "$app"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$app" dist/KrKr2-Next-macos-arm64.zip
