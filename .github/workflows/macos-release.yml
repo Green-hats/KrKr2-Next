@@ -35,7 +35,9 @@ jobs:
           cache: true
 
       - name: Install native build tools
-        run: brew install autoconf automake autoconf-archive gettext libtool pkg-config
+        run: |
+          brew install autoconf automake autoconf-archive gettext libtool pkg-config bison
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
 
       - name: Set up vcpkg at the repository baseline
         shell: bash
