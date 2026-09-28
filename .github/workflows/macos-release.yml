@@ -70,11 +70,21 @@ jobs:
           app="apps/flutter_app/build/macos/Build/Products/Release/KrKr2 Next.app"
           test -d "$app"
           test -f "$app/Contents/Frameworks/libengine_api.dylib"
-          python3 - "$app/Contents/Frameworks/libengine_api.dylib" <<'PY'
+          python3 - "$app" <<'PY'
           import ctypes
+          import plistlib
+          import subprocess
           import sys
-          ctypes.CDLL(sys.argv[1])
+
+          app = sys.argv[1]
+          ctypes.CDLL(f"{app}/Contents/Frameworks/libengine_api.dylib")
           print("engine_api dlopen OK")
+          entitlements = plistlib.loads(subprocess.check_output(
+              ["codesign", "-d", "--entitlements", ":-", app],
+              stderr=subprocess.DEVNULL,
+          ))
+          assert entitlements.get("com.apple.security.files.user-selected.read-write") is True, "read-write game folder entitlement missing"
+          print("User-selected game folders are writable")
           PY
           codesign --verify --deep --strict --verbose=2 "$app"
           mkdir -p dist
