@@ -114,6 +114,7 @@ log_step "Pre-flight checks"
 
 check_command cmake
 check_command ninja
+check_command python3
 
 if [[ ! -x "$FLUTTER_BIN" ]]; then
     log_error "Flutter SDK not found at: $FLUTTER_SDK"
@@ -209,6 +210,9 @@ log_info "Copied libengine_api.dylib -> $FRAMEWORKS_DIR/"
 # Fix the dylib's install name so the app can find it at runtime
 install_name_tool -id "@executable_path/../Frameworks/libengine_api.dylib" \
     "$FRAMEWORKS_DIR/libengine_api.dylib" 2>/dev/null || true
+
+log_info "Bundling engine dependencies into the .app..."
+python3 "$SCRIPT_DIR/bundle_macos_dylibs.py" "$APP_BUNDLE"
 
 # Re-sign the .app bundle (ad-hoc signing for local development)
 # Must specify --entitlements to preserve sandbox permissions (e.g. file picker)
