@@ -28,7 +28,6 @@ target_sources(${PROJECT_NAME} PUBLIC
     layerExRaster.cpp
     layerExAreaAverage.cpp
     layerExLongExposure.cpp
-    krkrlive2d.cpp
     krkrgles.cpp
     drawDeviceD2DCompat.cpp
     wfBasicEffectCompat.cpp
@@ -71,6 +70,9 @@ file(GLOB_RECURSE CUBISM_FW_SOURCES
 )
 # Exclude non-OpenGL renderers (already removed from tree, but safety net)
 list(FILTER CUBISM_FW_SOURCES EXCLUDE REGEX ".*/D3D9/.*|.*/D3D11/.*|.*/Vulkan/.*|.*/Metal/.*|.*/Cocos2d/.*")
+
+if(CUBISM_FW_SOURCES)
+    target_sources(${PROJECT_NAME} PRIVATE krkrlive2d.cpp)
 
 add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})
 target_include_directories(CubismFramework PUBLIC
@@ -121,6 +123,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 target_compile_definitions(${PROJECT_NAME} PUBLIC CSM_TARGET_ANGLE_ES2)
 target_link_libraries(${PROJECT_NAME} PUBLIC CubismFramework)
+else()
+    message(STATUS "Live2D Cubism Framework is unavailable; krkrlive2d plugin is disabled")
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${KRKR2PLUGIN_PATH} ${KRKR2PLUGIN_PATH}/simplebinder})
 target_link_libraries(${PROJECT_NAME} PUBLIC krkr2core)
