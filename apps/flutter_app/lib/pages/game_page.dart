@@ -477,9 +477,17 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     if (kDebugMode) _startMemoryStatsPolling();
 
     Duration lastElapsed = Duration.zero;
+    Duration lastFrameReport = Duration.zero;
+    final frameIntervalsUs = <int>[];
+    int skippedVsyncs = 0;
+    int maxEngineUs = 0;
+    int maxPresentUs = 0;
     _lastRenderedElapsed = Duration.zero;
     _ticker = Ticker((Duration elapsed) async {
-      if (_tickInFlight) return;
+      if (_tickInFlight) {
+        skippedVsyncs++;
+        return;
+      }
 
       final int deltaMs = lastElapsed == Duration.zero
           ? 16
@@ -488,7 +496,10 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
 
       _tickInFlight = true;
       try {
+        final engineTimer = Stopwatch()..start();
         final int result = await _bridge.engineTick(deltaMs: deltaMs);
+        final engineUs = engineTimer.elapsedMicroseconds;
+        if (engineUs > maxEngineUs) maxEngineUs = engineUs;
         if (!mounted) return;
 
         if (result != _engineResultOk) {
@@ -511,30 +522,55 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         // Read the rendered flag exactly once. We pass it to pollFrame()
         // so that engine_surface does NOT read it a second time (which
         // would always see false because the flag is reset on read).
+        final presentTimer = Stopwatch()..start();
         final bool rendered = await _bridge.engineGetFrameRenderedFlag();
         if (rendered) {
           if (_rendererInfo.isEmpty) {
             _fetchRendererInfo();
           }
           // Compute the real inter-render interval for accurate FPS.
-          final int renderDeltaMs = _lastRenderedElapsed == Duration.zero
-              ? deltaMs
-              : (elapsed - _lastRenderedElapsed).inMilliseconds.clamp(1, 200);
+          final int renderDeltaUs = _lastRenderedElapsed == Duration.zero
+              ? deltaMs * 1000
+              : (elapsed - _lastRenderedElapsed).inMicroseconds;
           _lastRenderedElapsed = elapsed;
+          if (renderDeltaUs > 0) frameIntervalsUs.add(renderDeltaUs);
 
           _perfOverlayKey0.currentState?.reportFrameDelta(
-            renderDeltaMs.toDouble(),
+            renderDeltaUs / 1000.0,
           );
           // Poll frame immediately after tick, passing the flag so
           // engine_surface skips its own flag read.
           await _surfaceKey.currentState?.pollFrame(rendered: true);
+          final presentUs = presentTimer.elapsedMicroseconds;
+          if (presentUs > maxPresentUs) maxPresentUs = presentUs;
         }
         _tickCount += 1;
-
-        if (_tickCount % 300 == 0) {
-          _log('Tick alive: count=$_tickCount');
-        }
       } finally {
+        if (elapsed - lastFrameReport >= const Duration(seconds: 5)) {
+          final sorted = frameIntervalsUs.toList()..sort();
+          final int count = sorted.length;
+          final double averageMs = count == 0
+              ? 0
+              : frameIntervalsUs.reduce((a, b) => a + b) / count / 1000;
+          final double p95Ms = count == 0
+              ? 0
+              : sorted[((count - 1) * 0.95).ceil()] / 1000;
+          final double worstMs = count == 0 ? 0 : sorted.last / 1000;
+          final int over25ms = sorted.where((us) => us > 25000).length;
+          _log(
+            'FRAME 5s: ticks=$_tickCount frames=$count '
+            'skippedVsyncs=$skippedVsyncs avg=${averageMs.toStringAsFixed(1)}ms '
+            'p95=${p95Ms.toStringAsFixed(1)}ms '
+            'worst=${worstMs.toStringAsFixed(1)}ms over25ms=$over25ms '
+            'engineMax=${(maxEngineUs / 1000).toStringAsFixed(1)}ms '
+            'presentMax=${(maxPresentUs / 1000).toStringAsFixed(1)}ms',
+          );
+          frameIntervalsUs.clear();
+          skippedVsyncs = 0;
+          maxEngineUs = 0;
+          maxPresentUs = 0;
+          lastFrameReport = elapsed;
+        }
         _tickInFlight = false;
       }
     });
