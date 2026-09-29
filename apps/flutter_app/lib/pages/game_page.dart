@@ -565,6 +565,9 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
             'engineMax=${(maxEngineUs / 1000).toStringAsFixed(1)}ms '
             'presentMax=${(maxPresentUs / 1000).toStringAsFixed(1)}ms',
           );
+          // The native runtime emits one compact line per large-layer motion.
+          // Read it here so the debug panel shows motion cadence beside FPS.
+          unawaited(_drainStartupLogs());
           frameIntervalsUs.clear();
           skippedVsyncs = 0;
           maxEngineUs = 0;

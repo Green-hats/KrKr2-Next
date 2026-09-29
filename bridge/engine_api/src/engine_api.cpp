@@ -42,6 +42,7 @@ void krkr_GetSurfaceDimensions(uint32_t*, uint32_t*);
 #include "base/SysInitIntf.h"
 #include "base/impl/SysInitImpl.h"
 #include "visual/GraphicsLoaderIntf.h"
+#include "visual/LayerIntf.h"
 #include "visual/ogl/ogl_common.h"
 #include "visual/ogl/krkr_egl_context.h"
 #include "visual/ogl/angle_backend.h"
@@ -83,6 +84,20 @@ struct engine_handle_s {
     std::chrono::steady_clock::time_point last_render_time{};
     bool initialized = false;
   } fps;
+
+  // Counts actual layer position changes between rendered ticks. This is
+  // separate from frame.serial, which advances even when the image is static.
+  struct MotionState {
+    bool active = false;
+    std::chrono::steady_clock::time_point first{};
+    std::chrono::steady_clock::time_point last{};
+    uint32_t ticks = 0;
+    uint32_t ticks_at_last_move = 0;
+    uint32_t moved_ticks = 0;
+    uint32_t changes = 0;
+    uint32_t max_gap_ms = 0;
+    uint32_t max_engine_us = 0;
+  } motion;
 
   // Input event queue
   struct InputState {
@@ -299,13 +314,20 @@ void PushRuntimeSpdlogToStartupQueue(const spdlog::details::log_msg& msg) {
   engine_handle_s* target = nullptr;
   {
     std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
-    if (!g_runtime_startup_active || g_runtime_startup_owner == nullptr) {
+    const bool starting = g_runtime_startup_active &&
+                          g_runtime_startup_owner != nullptr;
+    // Keep the running-game queue small: only forward motion diagnostics.
+    const bool motion_log = msg.payload.size() >= 7 &&
+                            std::memcmp(msg.payload.data(), "MOTION ", 7) == 0;
+    const engine_handle_t owner = starting ? g_runtime_startup_owner :
+        (g_runtime_active && motion_log ? g_runtime_owner : nullptr);
+    if (owner == nullptr) {
       return;
     }
-    if (!IsHandleLiveLocked(g_runtime_startup_owner)) {
+    if (!IsHandleLiveLocked(owner)) {
       return;
     }
-    target = reinterpret_cast<engine_handle_s*>(g_runtime_startup_owner);
+    target = reinterpret_cast<engine_handle_s*>(owner);
   }
   if (target == nullptr) {
     return;
@@ -1221,6 +1243,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   // form->UpdateDrawBuffer() — the actual rendering path.
   // TVPDrawSceneOnce() only restores GL state and calls SwapBuffer,
   // which is insufficient.
+  const auto engine_begin = std::chrono::steady_clock::now();
   if (::Application) {
     ::Application->Run();
   }
@@ -1233,6 +1256,51 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   // indefinitely, causing a memory leak — especially visible in OpenGL
   // mode where each texture also holds GPU resources.
   iTVPTexture2D::RecycleProcess();
+
+  const auto motion_now = std::chrono::steady_clock::now();
+  const auto engine_us = static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          motion_now - engine_begin).count());
+  const auto movement = TVPConsumeLayerMotionCounts();
+  auto& motion = impl->motion;
+  const auto report_motion = [&motion]() {
+    if (motion.moved_ticks < 3) return;
+    const auto span_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        motion.last - motion.first).count();
+    spdlog::info("MOTION span={}ms movedFrames={}/{} changes={} "
+                 "maxMoveGap={}ms engineMax={:.1f}ms",
+                 span_ms, motion.moved_ticks, motion.ticks_at_last_move,
+                 motion.changes, motion.max_gap_ms,
+                 motion.max_engine_us / 1000.0);
+  };
+  if (motion.active) {
+    const auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        motion_now - motion.last).count();
+    if (idle_ms > 250) {
+      report_motion();
+      motion = {};
+    }
+  }
+  if (movement.large_visible > 0) {
+    if (!motion.active) {
+      motion.active = true;
+      motion.first = motion_now;
+      motion.last = motion_now;
+    } else {
+      const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          motion_now - motion.last).count();
+      motion.max_gap_ms = std::max(motion.max_gap_ms,
+                                   static_cast<uint32_t>(gap_ms));
+      motion.last = motion_now;
+    }
+    ++motion.moved_ticks;
+    motion.changes += movement.large_visible;
+    motion.ticks_at_last_move = motion.ticks + 1;
+  }
+  if (motion.active) {
+    ++motion.ticks;
+    motion.max_engine_us = std::max(motion.max_engine_us, engine_us);
+  }
 
   if (TVPTerminated) {
     return SetHandleErrorAndReturnLocked(

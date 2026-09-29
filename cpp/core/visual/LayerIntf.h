@@ -26,6 +26,11 @@
 extern bool TVPFreeUnusedLayerCache;
 extern tjs_int TVPGetLayerCount();
 extern tjs_uint64 TVPGetLayerTotalBitmapBytes();
+struct tTVPLayerMotionCounts {
+    tjs_uint32 all;
+    tjs_uint32 large_visible;
+};
+extern tTVPLayerMotionCounts TVPConsumeLayerMotionCounts();
 
 //---------------------------------------------------------------------------
 // initial bitmap holder ( since tTVPBaseBitmap cannot create empty
