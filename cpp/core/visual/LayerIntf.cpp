@@ -66,11 +66,17 @@ bool TVPFreeUnusedLayerCache = false;
 
 static std::atomic<tjs_int> TVPLayerInstanceCount{0};
 static std::atomic<int64_t> TVPLayerBitmapTotalBytes{0};
+static std::atomic<tjs_uint32> TVPLayerPositionChanges{0};
+static std::atomic<tjs_uint32> TVPLargeVisibleLayerPositionChanges{0};
 
 tjs_int TVPGetLayerCount() { return TVPLayerInstanceCount.load(std::memory_order_relaxed); }
 tjs_uint64 TVPGetLayerTotalBitmapBytes() {
     auto v = TVPLayerBitmapTotalBytes.load(std::memory_order_relaxed);
     return v > 0 ? static_cast<tjs_uint64>(v) : 0;
+}
+tTVPLayerMotionCounts TVPConsumeLayerMotionCounts() {
+    return {TVPLayerPositionChanges.exchange(0, std::memory_order_relaxed),
+            TVPLargeVisibleLayerPositionChanges.exchange(0, std::memory_order_relaxed)};
 }
 
 static int64_t TVPCalcMainImageBytes(tTVPBaseTexture *img) {
@@ -2204,6 +2210,9 @@ void tTJSNI_BaseLayer::SetPosition(tjs_int left, tjs_int top) {
         // TODO: SetPosition
         if(visible)
             ParentUpdate();
+        TVPLayerPositionChanges.fetch_add(1, std::memory_order_relaxed);
+        if(visible && Rect.get_width() >= 200 && Rect.get_height() >= 200)
+            TVPLargeVisibleLayerPositionChanges.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
