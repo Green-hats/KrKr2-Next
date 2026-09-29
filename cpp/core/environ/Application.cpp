@@ -567,6 +567,8 @@ void tTVPApplication::Run() {
 }
 
 void tTVPApplication::ProcessMessages() {
+    // Queue short TJS timer events before this frame's event delivery.
+    TVPProgressFrameTimers();
     std::vector<std::tuple<void *, int, tMsg>> lstUserMsg;
     {
         std::lock_guard<std::mutex> cs(m_msgQueueLock);

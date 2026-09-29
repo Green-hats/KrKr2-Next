@@ -29,6 +29,12 @@
 // event.
 #define TVP_LEAST_TIMER_INTERVAL 3
 #define INFINITE 0xFFFFFFFF
+#if defined(__APPLE__)
+// A 16 ms TJS Timer drives many sprite motions. Waking a separate thread and
+// posting back to the render thread can miss the current 60 Hz frame.
+constexpr tjs_uint64 TVP_FRAME_TIMER_MAX_INTERVAL =
+    17ULL << TVP_SUBMILLI_FRAC_BITS;
+#endif
 
 //---------------------------------------------------------------------------
 // tTVPTimerThread
@@ -86,6 +92,8 @@ public:
 
     static void RegisterToPending(tTJSNI_Timer *item);
 
+    static void ProgressFrameTimers();
+
 } static *TVPTimerThread = nullptr;
 
 //---------------------------------------------------------------------------
@@ -124,6 +132,11 @@ void tTVPTimerThread::Execute() {
 
                 if(!item->GetEnabled() || item->GetInterval() == 0)
                     continue;
+
+#if defined(__APPLE__)
+                if(item->GetInterval() <= TVP_FRAME_TIMER_MAX_INTERVAL)
+                    continue; // The render thread dispatches these timers.
+#endif
 
                 if(item->GetNextTick() < curtick) {
                     tjs_uint n = static_cast<tjs_uint>(
@@ -354,6 +367,35 @@ void tTVPTimerThread::RegisterToPending(tTJSNI_Timer *item) {
     }
 }
 //---------------------------------------------------------------------------
+
+void tTVPTimerThread::ProgressFrameTimers() {
+#if defined(__APPLE__)
+    if(!TVPTimerThread)
+        return;
+
+    tTJSCriticalSectionHolder holder(TVPTimerThread->TVPTimerCS);
+    const tjs_uint64 now = TVPGetTickCount() << TVP_SUBMILLI_FRAC_BITS;
+    for(tTJSNI_Timer *item : TVPTimerThread->List) {
+        const tjs_uint64 interval = item->GetInterval();
+        if(!item->GetEnabled() || interval == 0 ||
+           interval > TVP_FRAME_TIMER_MAX_INTERVAL ||
+           item->GetNextTick() > now)
+            continue;
+
+        // Coalesce missed periods after a delayed frame. Motion scripts use
+        // the current clock for interpolation, so replaying old callbacks
+        // would only add work without displaying the intermediate positions.
+        const tjs_uint64 elapsed = now - item->GetNextTick();
+        item->SetNextTick(item->GetNextTick() +
+                          (elapsed / interval + 1) * interval);
+        item->FireFrameEvent();
+    }
+#endif
+}
+
+void TVPProgressFrameTimers() {
+    tTVPTimerThread::ProgressFrameTimers();
+}
 
 //---------------------------------------------------------------------------
 // tTJSNI_Timer

@@ -68,6 +68,7 @@ static std::atomic<tjs_int> TVPLayerInstanceCount{0};
 static std::atomic<int64_t> TVPLayerBitmapTotalBytes{0};
 static std::atomic<tjs_uint32> TVPLayerPositionChanges{0};
 static std::atomic<tjs_uint32> TVPLargeVisibleLayerPositionChanges{0};
+static std::atomic<tjs_uint32> TVPLargeVisibleLayerHorizontalChanges{0};
 
 tjs_int TVPGetLayerCount() { return TVPLayerInstanceCount.load(std::memory_order_relaxed); }
 tjs_uint64 TVPGetLayerTotalBitmapBytes() {
@@ -76,7 +77,8 @@ tjs_uint64 TVPGetLayerTotalBitmapBytes() {
 }
 tTVPLayerMotionCounts TVPConsumeLayerMotionCounts() {
     return {TVPLayerPositionChanges.exchange(0, std::memory_order_relaxed),
-            TVPLargeVisibleLayerPositionChanges.exchange(0, std::memory_order_relaxed)};
+            TVPLargeVisibleLayerPositionChanges.exchange(0, std::memory_order_relaxed),
+            TVPLargeVisibleLayerHorizontalChanges.exchange(0, std::memory_order_relaxed)};
 }
 
 static int64_t TVPCalcMainImageBytes(tTVPBaseTexture *img) {
@@ -2199,6 +2201,7 @@ void tTJSNI_BaseLayer::SetTop(tjs_int top) {
 //---------------------------------------------------------------------------
 void tTJSNI_BaseLayer::SetPosition(tjs_int left, tjs_int top) {
     if(Rect.left != left || Rect.top != top) {
+        const bool horizontal = Rect.left != left;
         bool visible = GetVisible() || GetNodeVisible();
         if(IsPrimary() && (left != 0 || top != 0))
             TVPThrowExceptionMessage(TVPCannotMovePrimary);
@@ -2211,8 +2214,11 @@ void tTJSNI_BaseLayer::SetPosition(tjs_int left, tjs_int top) {
         if(visible)
             ParentUpdate();
         TVPLayerPositionChanges.fetch_add(1, std::memory_order_relaxed);
-        if(visible && Rect.get_width() >= 200 && Rect.get_height() >= 200)
+        if(visible && Rect.get_width() >= 200 && Rect.get_height() >= 200) {
             TVPLargeVisibleLayerPositionChanges.fetch_add(1, std::memory_order_relaxed);
+            if(horizontal)
+                TVPLargeVisibleLayerHorizontalChanges.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 }
 

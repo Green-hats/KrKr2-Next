@@ -29,6 +29,7 @@ extern tjs_uint64 TVPGetLayerTotalBitmapBytes();
 struct tTVPLayerMotionCounts {
     tjs_uint32 all;
     tjs_uint32 large_visible;
+    tjs_uint32 large_visible_horizontal;
 };
 extern tTVPLayerMotionCounts TVPConsumeLayerMotionCounts();
 

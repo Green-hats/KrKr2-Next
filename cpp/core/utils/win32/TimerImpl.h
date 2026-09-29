@@ -61,8 +61,14 @@ public:
 
     void FirePendingEventsAndClear();
 
+    // Queue one timer event from the render thread for short frame timers.
+    void FireFrameEvent() { Fire(1); }
+
 private:
     void CancelTrigger();
 };
 //---------------------------------------------------------------------------
+
+// On macOS, deliver short timer callbacks before the current frame is drawn.
+void TVPProgressFrameTimers();
 #endif

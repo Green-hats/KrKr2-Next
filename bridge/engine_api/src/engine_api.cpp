@@ -1267,7 +1267,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     if (motion.moved_ticks < 3) return;
     const auto span_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         motion.last - motion.first).count();
-    spdlog::info("MOTION span={}ms movedFrames={}/{} changes={} "
+    spdlog::info("MOTION horizontal span={}ms movedFrames={}/{} changes={} "
                  "maxMoveGap={}ms engineMax={:.1f}ms",
                  span_ms, motion.moved_ticks, motion.ticks_at_last_move,
                  motion.changes, motion.max_gap_ms,
@@ -1281,7 +1281,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       motion = {};
     }
   }
-  if (movement.large_visible > 0) {
+  if (movement.large_visible_horizontal > 0) {
     if (!motion.active) {
       motion.active = true;
       motion.first = motion_now;
@@ -1294,7 +1294,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       motion.last = motion_now;
     }
     ++motion.moved_ticks;
-    motion.changes += movement.large_visible;
+    motion.changes += movement.large_visible_horizontal;
     motion.ticks_at_last_move = motion.ticks + 1;
   }
   if (motion.active) {
