@@ -566,7 +566,8 @@ void TVPUninitScriptEngine() {
     TVPScriptEngineUninit = true;
 
     // TVPScriptEngine->Shutdown();
-    TVPScriptEngine->Release();
+    if(TVPScriptEngine)
+        TVPScriptEngine->Release();
     /*
         Objects, theirs lives are contolled by reference counter, may
        not be all freed here in some occations.

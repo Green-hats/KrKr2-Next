@@ -18,6 +18,10 @@
 
 #include <csignal>
 #include <cstdlib>
+#if !defined(_WIN32)
+#include <signal.h>
+#include <unistd.h>
+#endif
 #if defined(__ANDROID__)
 #include <android/log.h>
 #include <android/native_window.h>
@@ -25,10 +29,6 @@
 ANativeWindow* krkr_GetNativeWindow();
 void krkr_GetSurfaceDimensions(uint32_t*, uint32_t*);
 #endif
-#if !defined(__ANDROID__)
-#include <execinfo.h>
-#endif
-
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/sink.h>
 #include <spdlog/spdlog.h>
@@ -159,6 +159,9 @@ bool g_engine_bootstrapped = false;
 bool g_runtime_startup_active = false;
 engine_handle_t g_runtime_startup_owner = nullptr;
 std::once_flag g_loggers_init_once;
+#if defined(__APPLE__)
+std::once_flag g_process_exit_once;
+#endif
 std::shared_ptr<spdlog::sinks::sink> g_startup_log_sink;
 constexpr size_t kMaxStartupLogs = 4000;
 
@@ -183,25 +186,24 @@ std::shared_ptr<spdlog::logger> EnsureNamedLogger(const char* name) {
 }
 
 void CrashSignalHandler(int sig) {
-  spdlog::critical("FATAL SIGNAL {} received!", sig);
-
-  // Print a mini backtrace (not available on Android)
-#if !defined(__ANDROID__)
-  void* frames[32];
-  int count = backtrace(frames, 32);
-  char** symbols = backtrace_symbols(frames, count);
-  if (symbols) {
-    for (int i = 0; i < count; ++i) {
-      spdlog::critical("  [{}] {}", i, symbols[i]);
-    }
-    free(symbols);
-  }
+#if !defined(_WIN32)
+  // Signal handlers cannot use spdlog, allocation, or symbolication. Those
+  // operations can throw or take a destroyed mutex during process teardown.
+  static constexpr char message[] = "KrKr2 Next: fatal signal\n";
+  (void)write(STDERR_FILENO, message, sizeof(message) - 1);
+  struct sigaction action = {};
+  action.sa_handler = SIG_DFL;
+  sigemptyset(&action.sa_mask);
+  sigaction(sig, &action, nullptr);
+  sigset_t unblocked;
+  sigemptyset(&unblocked);
+  sigaddset(&unblocked, sig);
+  sigprocmask(SIG_UNBLOCK, &unblocked, nullptr);
+  kill(getpid(), sig);
+  _exit(128 + sig);
+#else
+  std::_Exit(128 + sig);
 #endif
-
-  spdlog::default_logger()->flush();
-  // Re-raise so the OS generates a proper crash report
-  signal(sig, SIG_DFL);
-  raise(sig);
 }
 
 void InstallCrashSignalHandlers() {
@@ -210,6 +212,17 @@ void InstallCrashSignalHandlers() {
   signal(SIGBUS,  CrashSignalHandler);
   signal(SIGFPE,  CrashSignalHandler);
 }
+
+#if defined(__APPLE__)
+void ShutdownRuntimeAtProcessExit() {
+  // Flutter's last-window close terminates Cocoa without visiting the Dart
+  // game's dispose path. Run the engine's ordered at-exit handlers while its
+  // static caches and mutexes still exist.
+  if (g_engine_bootstrapped && !TVPSystemUninitCalled) {
+    TVPSystemUninit();
+  }
+}
+#endif
 
 void EnsureInternalPluginAnchorsLinked() {
   TVPRegisterKrkrGLESPluginAnchor();
@@ -527,6 +540,11 @@ engine_result_t OpenGameCore(engine_handle_t handle,
   }
 
   EnsureRuntimeLoggersInitialized();
+#if defined(__APPLE__)
+  std::call_once(g_process_exit_once, [] {
+    std::atexit(ShutdownRuntimeAtProcessExit);
+  });
+#endif
   EnsureInternalPluginAnchorsLinked();
   // Cache options set via engine_set_option() are already stored in
   // TVPEarlySetOptions and will be merged during TVPSystemInit().

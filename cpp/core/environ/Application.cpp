@@ -30,6 +30,7 @@
 #include <thread>
 #include "ConfigManager/LocaleConfigManager.h"
 #include "StorageIntf.h"
+#include "TimerImpl.h"
 extern "C" {
 #include <libavutil/avstring.h>
 }

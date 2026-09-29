@@ -102,7 +102,9 @@ static void TVPWatchThreadUninit() {
 }
 
 //---------------------------------------------------------------------------
-static tTVPAtExit TVPWatchThreadUninitAtExit(TVP_ATEXIT_PRI_SHUTDOWN,
+// Timer and event worker threads can still read the clock while shutting
+// down. Stop the overflow watcher after those workers have been joined.
+static tTVPAtExit TVPWatchThreadUninitAtExit(TVP_ATEXIT_PRI_CLEANUP - 1,
                                              TVPWatchThreadUninit);
 //---------------------------------------------------------------------------
 

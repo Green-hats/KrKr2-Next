@@ -373,21 +373,40 @@ void tTVPTimerThread::ProgressFrameTimers() {
     if(!TVPTimerThread)
         return;
 
-    tTJSCriticalSectionHolder holder(TVPTimerThread->TVPTimerCS);
-    const tjs_uint64 now = TVPGetTickCount() << TVP_SUBMILLI_FRAC_BITS;
-    for(tTJSNI_Timer *item : TVPTimerThread->List) {
-        const tjs_uint64 interval = item->GetInterval();
-        if(!item->GetEnabled() || interval == 0 ||
-           interval > TVP_FRAME_TIMER_MAX_INTERVAL ||
-           item->GetNextTick() > now)
-            continue;
+    std::vector<tTJSNI_Timer *> due;
+    {
+        tTJSCriticalSectionHolder holder(TVPTimerThread->TVPTimerCS);
+        const tjs_uint64 now = TVPGetTickCount() << TVP_SUBMILLI_FRAC_BITS;
+        for(tTJSNI_Timer *item : TVPTimerThread->List) {
+            const tjs_uint64 interval = item->GetInterval();
+            if(!item->GetEnabled() || interval == 0 ||
+               interval > TVP_FRAME_TIMER_MAX_INTERVAL ||
+               item->GetNextTick() > now)
+                continue;
 
-        // Coalesce missed periods after a delayed frame. Motion scripts use
-        // the current clock for interpolation, so replaying old callbacks
-        // would only add work without displaying the intermediate positions.
-        const tjs_uint64 elapsed = now - item->GetNextTick();
-        item->SetNextTick(item->GetNextTick() +
-                          (elapsed / interval + 1) * interval);
+            // Coalesce missed periods after a delayed frame. Motion scripts
+            // interpolate from the current clock rather than replaying steps.
+            const tjs_uint64 elapsed = now - item->GetNextTick();
+            item->SetNextTick(item->GetNextTick() +
+                              (elapsed / interval + 1) * interval);
+            due.push_back(item);
+        }
+    }
+    // A callback may remove another timer, so never invoke scripts while
+    // iterating the timer list or holding its lock.
+    for(tTJSNI_Timer *item : due) {
+        bool still_active;
+        {
+            tTJSCriticalSectionHolder holder(TVPTimerThread->TVPTimerCS);
+            still_active =
+                std::find(TVPTimerThread->List.begin(),
+                          TVPTimerThread->List.end(), item) !=
+                    TVPTimerThread->List.end() &&
+                item->GetEnabled() &&
+                item->GetInterval() <= TVP_FRAME_TIMER_MAX_INTERVAL;
+        }
+        if(!still_active)
+            continue;
         item->FireFrameEvent();
     }
 #endif
