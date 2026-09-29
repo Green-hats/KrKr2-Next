@@ -771,8 +771,15 @@ struct tTVPDrawTextData {
     tTVPBBBltMethod bltmode;
 };
 
-static iTVPTexture2D *_CharacterTexture = nullptr,
-                     *_CharacterTextureRGBA = nullptr;
+// Reusing one glyph texture immediately after drawing from it forces ANGLE's
+// Metal backend to wait for the GPU before each glTexSubImage2D. Keep several
+// upload targets in flight so text-heavy scenes (especially skip mode) can
+// draw subsequent glyphs without synchronizing with the previous draw.
+static constexpr unsigned int kCharacterTexturePoolSize = 128;
+static iTVPTexture2D *CharacterTextures[kCharacterTexturePoolSize] = {};
+static iTVPTexture2D *CharacterTexturesRGBA[kCharacterTexturePoolSize] = {};
+static unsigned int NextCharacterTexture = 0;
+static unsigned int NextCharacterTextureRGBA = 0;
 
 bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
                                              tTVPDrawTextData *dtdata,
@@ -803,6 +810,9 @@ bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
 
     iTVPTexture2D *pTexSrc;
     if(fastGPURoute && dtdata->bltmode == bmAlphaOnAlpha && dtdata->opa > 0) {
+        iTVPTexture2D *&characterTexture =
+            CharacterTexturesRGBA[NextCharacterTextureRGBA++ %
+                                  kCharacterTexturePoolSize];
         // convert to addalpha bitmap
         tTVPBitmap *tmp = new tTVPBitmap(w, h, 32);
         tjs_int spitch = pitch;
@@ -817,34 +827,38 @@ bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
             dst += dpitch;
             src += spitch;
         }
-        if(_CharacterTextureRGBA) {
-            if(_CharacterTextureRGBA->GetFormat() != TVPTextureFormat::RGBA) {
-                _CharacterTextureRGBA->Release();
-                _CharacterTextureRGBA = nullptr;
+        if(characterTexture) {
+            if(characterTexture->GetFormat() != TVPTextureFormat::RGBA) {
+                characterTexture->Release();
+                characterTexture = nullptr;
             }
         }
-        if(!_CharacterTextureRGBA) {
-            _CharacterTextureRGBA = GetRenderManager()->CreateTexture2D(
+        if(!characterTexture) {
+            characterTexture = GetRenderManager()->CreateTexture2D(
                 tmp->GetBits(), dpitch, w, h, TVPTextureFormat::RGBA,
                 RENDER_CREATE_TEXTURE_FLAG_NO_COMPRESS);
-        } else if(_CharacterTextureRGBA->GetInternalWidth() < w ||
-                  _CharacterTextureRGBA->GetInternalHeight() < h) {
-            _CharacterTextureRGBA->Release();
-            _CharacterTextureRGBA = GetRenderManager()->CreateTexture2D(
+        } else if(characterTexture->GetInternalWidth() < w ||
+                  characterTexture->GetInternalHeight() < h) {
+            characterTexture->Release();
+            characterTexture = GetRenderManager()->CreateTexture2D(
                 tmp->GetBits(), dpitch, w, h, TVPTextureFormat::RGBA,
                 RENDER_CREATE_TEXTURE_FLAG_NO_COMPRESS);
         } else {
-            _CharacterTextureRGBA->Update(tmp->GetBits(),
-                                          TVPTextureFormat::RGBA, dpitch,
-                                          tTVPRect(0, 0, w, h));
+            characterTexture->Update(tmp->GetBits(), TVPTextureFormat::RGBA,
+                                     dpitch, tTVPRect(0, 0, w, h));
         }
 
         tmp->Release();
 
         GEMTHOD_OPA_CLR(AlphaBlend_a);
         method->SetParameterOpa(opa_id, dtdata->opa);
-        pTexSrc = _CharacterTextureRGBA;
+        pTexSrc = characterTexture;
     } else {
+        iTVPTexture2D *&characterTexture =
+            CharacterTextures[TVPIsSoftwareRenderManager()
+                                  ? 0
+                                  : NextCharacterTexture++ %
+                                        kCharacterTexturePoolSize];
         if(dtdata->bltmode == bmAlphaOnAlpha) {
             if(dtdata->opa > 0) {
                 GEMTHOD_OPA_CLR(ApplyColorMap_d);
@@ -859,22 +873,22 @@ bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
         }
 
         // blend to the texture
-        if(!_CharacterTexture) {
-            _CharacterTexture = GetRenderManager()->CreateTexture2D(
+        if(!characterTexture) {
+            characterTexture = GetRenderManager()->CreateTexture2D(
                 nullptr, pitch, w, h, TVPTextureFormat::Gray);
-        } else if(_CharacterTexture->GetInternalWidth() < w ||
-                  _CharacterTexture->GetInternalHeight() < h) {
-            _CharacterTexture->Release();
-            _CharacterTexture = GetRenderManager()->CreateTexture2D(
+        } else if(characterTexture->GetInternalWidth() < w ||
+                  characterTexture->GetInternalHeight() < h) {
+            characterTexture->Release();
+            characterTexture = GetRenderManager()->CreateTexture2D(
                 nullptr, pitch, w, h, TVPTextureFormat::Gray);
         }
-        _CharacterTexture->Update(bp, TVPTextureFormat::Gray, pitch,
-                                  tTVPRect(0, 0, w, h));
+        characterTexture->Update(bp, TVPTextureFormat::Gray, pitch,
+                                 tTVPRect(0, 0, w, h));
 
         method->SetParameterOpa(opa_id, dtdata->opa);
         method->SetParameterColor4B(clr_id, color);
 
-        pTexSrc = _CharacterTexture;
+        pTexSrc = characterTexture;
     }
 #if 0
     if (pShader->isBlendEnabled() || !IsIndependent()) {
