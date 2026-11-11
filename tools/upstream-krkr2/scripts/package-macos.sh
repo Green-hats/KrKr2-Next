@@ -6,7 +6,7 @@ binary="$app/Contents/MacOS/krkr2"
 test -x "$binary"
 plutil -lint "$app/Contents/Info.plist"
 test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")" = krkr2
-lipo -verify_arch arm64 "$binary"
+lipo "$binary" -verify_arch arm64
 
 # Copy non-system shared libraries into the bundle and rewrite install names.
 cat > "$RUNNER_TEMP/fixup-bundle.cmake" <<'CMAKE'
