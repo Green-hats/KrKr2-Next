@@ -46,6 +46,8 @@ jobs:
           repository: microsoft/vcpkg
           ref: ${{ env.VCPKG_REVISION }}
           path: vcpkg-tool
+          # opencv4 is pinned to an older port tree; versioning needs history.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install build tools
