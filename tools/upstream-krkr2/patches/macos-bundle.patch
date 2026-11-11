@@ -1,0 +1,26 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7fdec5e..d1911b5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -239 +239 @@ if(KRKR2_BUILD_APP)
+-            if(MACOSX)
++            if(MACOS)
+@@ -241 +241 @@ if(KRKR2_BUILD_APP)
+-                        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/apple/macos/Info.plist"
++                        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Info.plist"
+diff --git a/platforms/apple/macos/Info.plist b/platforms/apple/macos/Info.plist
+index 339bca5..6fb660b 100644
+--- a/platforms/apple/macos/Info.plist
++++ b/platforms/apple/macos/Info.plist
+@@ -8 +8 @@
+-	<string>${EXECUTABLE_NAME}</string>
++	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+@@ -16 +16 @@
+-	<string>${PRODUCT_NAME}</string>
++	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+@@ -28 +28 @@
+-	<string>${MACOSX_DEPLOYMENT_TARGET}</string>
++	<string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+@@ -31,2 +30,0 @@
+-	<key>NSMainNibFile</key>
+-	<string>MainMenu</string>

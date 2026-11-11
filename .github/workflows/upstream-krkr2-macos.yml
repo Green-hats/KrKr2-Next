@@ -1,0 +1,121 @@
+name: Build KrKr2 macOS ARM64
+
+on:
+  push:
+    branches: [main, 'devin/**-upstream-krkr2-macos']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_REVISION: c8d0e384ed52366b4584244f0a8c011308da5516
+  VCPKG_REVISION: aa40adda5352e87655b8583cfb2451d5e9e276fd
+  MACOSX_DEPLOYMENT_TARGET: '12.0'
+  VCPKG_OSX_DEPLOYMENT_TARGET: '12.0'
+  VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg-cache,readwrite'
+  VCPKG_MAX_CONCURRENCY: '3'
+  CMAKE_BUILD_PARALLEL_LEVEL: '3'
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout pinned upstream source
+        uses: actions/checkout@v4
+        with:
+          repository: 2468785842/krkr2
+          ref: ${{ env.SOURCE_REVISION }}
+          path: source
+          persist-credentials: false
+
+      - name: Checkout pinned vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ env.VCPKG_REVISION }}
+          path: vcpkg-tool
+          persist-credentials: false
+
+      - name: Install build tools
+        run: |
+          test "$(uname -m)" = arm64
+          brew install bison autoconf autoconf-archive automake libtool pkg-config yasm nasm ninja libomp
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg-tool" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/pip" install cmake==3.31.10
+          echo "$RUNNER_TEMP/cmake-venv/bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/vcpkg-tool/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Restore dependency binary cache
+        uses: actions/cache/restore@v4
+        id: dependency-cache
+        with:
+          path: vcpkg-cache
+          key: macos-15-arm64-v1-${{ hashFiles('source/vcpkg.json', 'source/vcpkg-configuration.json', 'source/vcpkg/**', 'tools/upstream-krkr2/patches/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: macos-15-arm64-v1-
+
+      - name: Apply macOS packaging fixes
+        run: git -C source apply --unidiff-zero ../tools/upstream-krkr2/patches/macos-bundle.patch
+
+      - name: Configure full runtime
+        run: |
+          mkdir -p logs
+          cmake --version | tee logs/toolchain.txt
+          xcodebuild -version | tee -a logs/toolchain.txt
+          clang --version | tee -a logs/toolchain.txt
+          cmake --preset 'MacOS Release Config' -S source \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DENABLE_TESTS=OFF -DBUILD_TOOLS=OFF 2>&1 | tee logs/configure.log
+
+      - name: Build full runtime
+        run: cmake --build source/out/macos/release --target krkr2 2>&1 | tee logs/build.log
+
+      - name: Package and verify application
+        run: bash tools/upstream-krkr2/scripts/package-macos.sh
+
+      - name: Upload application
+        uses: actions/upload-artifact@v4
+        with:
+          name: krkr2-macos-arm64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Collect dependency failure logs
+        if: failure()
+        run: |
+          mkdir -p logs/vcpkg
+          if [ -d vcpkg-tool/buildtrees ]; then
+            find vcpkg-tool/buildtrees -type f \( -name '*.log' -o -name '*.txt' \) -exec cp {} logs/vcpkg/ \;
+          fi
+
+      - name: Save completed dependencies even after a build failure
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-logs
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 14
