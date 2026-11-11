@@ -9,7 +9,9 @@
 成功后下载 `krkr2-macos-arm64` artifact，解压其中的 `krkr2-macos-arm64.zip` 获取 `krkr2.app`。
 工作流也上传 `macos-build-logs`，便于调查依赖或编译失败。
 
-产物面向 Apple Silicon，部署目标为 macOS 12.0。
+产物面向 Apple Silicon；当前 runner 的动态库要求 macOS 15.0 或更新系统。
+编译部署目标为 macOS 12.0，打包时会读取所有捆绑 Mach-O 文件的最低系统版本，
+据此更新应用的 `LSMinimumSystemVersion` 和构建信息，不能把编译目标当作实际兼容范围。
 应用使用临时签名，未经过 Apple 公证；工作流验证应用包、依赖、签名和 `--help` 启动，
 这些检查不等于 GUI 或游戏兼容性验证。具体可用性以实际 Actions 结果为准。
 
